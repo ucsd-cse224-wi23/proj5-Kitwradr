@@ -52,6 +52,10 @@ func NewRaftServer(id int64, config RaftConfig) (*RaftSurfstore, error) {
 		log:            make([]*UpdateOperation, 0),
 		isCrashed:      false,
 		isCrashedMutex: &isCrashedMutex,
+		lastApplied:    0,
+		commitIndex:    0,
+		nextIndex:      make([]int64, len(config.RaftAddrs)),
+		matchIndex:     make([]int64, len(config.RaftAddrs)),
 	}
 
 	return &server, nil
@@ -61,12 +65,14 @@ func NewRaftServer(id int64, config RaftConfig) (*RaftSurfstore, error) {
 func ServeRaftServer(server *RaftSurfstore) error {
 	grpcServer := grpc.NewServer()
 
+	RegisterRaftSurfstoreServer(grpcServer, server)
+
 	l, e := net.Listen("tcp", server.raftAddrs[server.id])
 	if e != nil {
 		fmt.Println("Error starting server", e.Error())
 		return e
 	}
-	
+
 	grpcServer.Serve(l)
 
 	return nil

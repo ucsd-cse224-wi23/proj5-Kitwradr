@@ -144,6 +144,7 @@ func (surfClient *RPCClient) GetBlockStoreAddrs(blockStoreAddr *[]string) error 
 }
 
 func (surfClient *RPCClient) GetBlockStoreMap(blockHashesIn []string, blockStoreMap *map[string][]string) error {
+	//Todo: Find leader in meta store and connect to it
 	conn, err := grpc.Dial(surfClient.MetaStoreAddrs[0], grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err

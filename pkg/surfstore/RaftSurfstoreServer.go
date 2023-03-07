@@ -2,9 +2,13 @@ package surfstore
 
 import (
 	context "context"
+	"fmt"
 	"math"
 	"sync"
+	"time"
 
+	grpc "google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -15,9 +19,17 @@ type RaftSurfstore struct {
 	isLeaderMutex *sync.RWMutex
 	term          int64
 	commitIndex   int64
+	lastApplied   int64
 	log           []*UpdateOperation
 	raftAddrs     []string
 	metaStore     *MetaStore
+
+	matchIndex []int64 //for each server, index of the next log entry
+	//to send to that server (initialized to leader
+	//last log index + 1)
+	nextIndex []int64 //for each server, index of highest log entry
+	//known to be replicated on server
+	//(initialized to 0, increases monotonically)
 
 	/*--------------- Chaos Monkey --------------*/
 	isCrashed      bool
@@ -25,12 +37,24 @@ type RaftSurfstore struct {
 	UnimplementedRaftSurfstoreServer
 }
 
+func (s *RaftSurfstore) GetIsLeader() bool {
+	s.isLeaderMutex.RLock()
+	defer s.isLeaderMutex.RUnlock()
+	return s.isLeader
+}
+
+func (s *RaftSurfstore) GetIsCrashed() bool {
+	s.isCrashedMutex.RLock()
+	defer s.isCrashedMutex.RUnlock()
+	return s.isCrashed
+}
+
 // If the node is the leader, and if a majority of the nodes are working, should return the correct answer; if a majority of the nodes are crashed, should block until a majority recover.  If not the leader, should indicate an error back to the client
 func (s *RaftSurfstore) GetFileInfoMap(ctx context.Context, empty *emptypb.Empty) (*FileInfoMap, error) {
 	// Execute only if server is not crashed
-	if !s.isCrashed {
+	if !s.GetIsCrashed() {
 		// If server is leader, return the file info map
-		if s.isLeader {
+		if s.GetIsLeader() {
 			return s.metaStore.GetFileInfoMap(ctx, empty)
 		} else {
 			return nil, ERR_NOT_LEADER
@@ -38,21 +62,29 @@ func (s *RaftSurfstore) GetFileInfoMap(ctx context.Context, empty *emptypb.Empty
 	} else {
 		return nil, ERR_SERVER_CRASHED
 	}
-	return nil, nil
 }
 
 func (s *RaftSurfstore) GetBlockStoreMap(ctx context.Context, hashes *BlockHashes) (*BlockStoreMap, error) {
-	panic("todo")
-	return nil, nil
+	// Execute only if server is not crashed
+	if !s.GetIsCrashed() {
+		// If server is leader, return the block store map
+		if s.GetIsLeader() {
+			return s.metaStore.GetBlockStoreMap(ctx, hashes)
+		} else {
+			return nil, ERR_NOT_LEADER
+		}
+	} else {
+		return nil, ERR_SERVER_CRASHED
+	}
 }
 
 // If the node is the leader, and if a majority of the nodes are working, should return the correct answer; if a majority of the nodes are crashed, should block until a majority recover.
 // If not the leader, should indicate an error back to the client
 func (s *RaftSurfstore) GetBlockStoreAddrs(ctx context.Context, empty *emptypb.Empty) (*BlockStoreAddrs, error) {
 	// Execute only if server is not crashed
-	if !s.isCrashed {
+	if !s.GetIsCrashed() {
 		// If server is leader, return the block store addresses
-		if s.isLeader {
+		if s.GetIsLeader() {
 			return s.metaStore.GetBlockStoreAddrs(ctx, empty)
 		} else {
 			return nil, ERR_NOT_LEADER
@@ -66,9 +98,9 @@ func (s *RaftSurfstore) GetBlockStoreAddrs(ctx context.Context, empty *emptypb.E
 // if a majority of the nodes are crashed, should block until a majority recover.  If not the leader, should indicate an error back to the client
 func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) (*Version, error) {
 	// Execute only if server is not crashed
-	if !s.isCrashed {
+	if !s.GetIsCrashed() {
 		// If server is leader, update the file
-		if s.isLeader {
+		if s.GetIsLeader() {
 			return s.metaStore.UpdateFile(ctx, filemeta)
 		} else {
 			return nil, ERR_NOT_LEADER
@@ -148,12 +180,34 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 			for _, server := range s.raftAddrs {
 				if server != s.raftAddrs[s.id] {
 					wg.Add(1)
-					go s.AppendEntries(ctx, &AppendEntryInput{})
+					go clientHeartBeat(server, &wg, &AppendEntryInput{})
 				}
 			}
 		}
 	}
 	return nil, nil
+}
+
+func clientHeartBeat(addr string, wg *sync.WaitGroup, appendEntryInput *AppendEntryInput) error {
+	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		fmt.Println("Error opening a grpc connection")
+		return err
+	}
+
+	c := NewRaftSurfstoreClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err = c.AppendEntries(ctx, appendEntryInput)
+	if err != nil {
+		fmt.Println("Error sending heartbeat to server: ", addr, " ", err)
+		return err
+	}
+
+	wg.Done()
+	return conn.Close()
 }
 
 // ========== DO NOT MODIFY BELOW THIS LINE =====================================
