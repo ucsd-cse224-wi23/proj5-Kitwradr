@@ -260,6 +260,7 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 
 		if len(input.Entries) > 0 {
 			fmt.Println("Appending entries on server", s.id, input.Entries)
+			fmt.Println("Current log --->", s.log)
 			s.log = append(s.log, input.Entries...)
 		}
 
@@ -491,7 +492,7 @@ func (s *RaftSurfstore) Crash(ctx context.Context, _ *emptypb.Empty) (*Success, 
 	s.isCrashedMutex.Lock()
 	s.isCrashed = true
 	s.isCrashedMutex.Unlock()
-	fmt.Println("Crash from server: ", s.id)
+	fmt.Println("Crash from server: ", s.id+1)
 	return &Success{Flag: true}, nil
 }
 
@@ -499,7 +500,7 @@ func (s *RaftSurfstore) Restore(ctx context.Context, _ *emptypb.Empty) (*Success
 	s.isCrashedMutex.Lock()
 	s.isCrashed = false
 	s.isCrashedMutex.Unlock()
-	fmt.Println("Restore from server: ", s.id)
+	fmt.Println("Restore from server: ", s.id+1)
 	return &Success{Flag: true}, nil
 }
 
