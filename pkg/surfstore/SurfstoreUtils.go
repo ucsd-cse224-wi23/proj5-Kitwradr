@@ -13,7 +13,7 @@ func ClientSync(client RPCClient) {
 	var delHash []string
 	delHash = append(delHash, "0")
 
-	fmt.Println("Starting sync")
+	fmt.Println("Starting sync", client.BaseDir)
 	serverFileInfoMap := make(map[string]*FileMetaData)
 	err := client.GetFileInfoMap(&serverFileInfoMap)
 
@@ -21,7 +21,7 @@ func ClientSync(client RPCClient) {
 		log.Fatal("Error retrieving file info map from server", err.Error())
 	}
 
-	fmt.Println("Retrieved the file info map from server") //, serverFileInfoMap)
+	fmt.Println("Retrieved the file info map from server", serverFileInfoMap)
 
 	base_path, err := filepath.Abs(client.BaseDir)
 
@@ -57,10 +57,10 @@ func ClientSync(client RPCClient) {
 	updateClientInfoMap(&client_files_info, client, local_index)
 
 	// Write file which does not exist in server and exists in local directory
-
+	PrintMetaMap(serverFileInfoMap)
 	for file, file_info := range client_files_info {
 		if _, ok := serverFileInfoMap[file]; ok {
-			//fmt.Println("File already exists in metastore", file_info.fileName)
+			fmt.Println("File already exists in metastore", file_info.fileName, client.BaseDir)
 		} else { //File exists on client but not in server
 			if !checkDeletedFile(file_info.blockHashList) { // Send only if it's not a deleted file
 				err := sendFileToServer(*file_info, file, client, (*file_info).version) // Version for new file is 0
@@ -125,6 +125,7 @@ func handleUpdateServerCase(server_file *FileMetaData, client_files_info *map[st
 	// Server file has a higher version, so write from server to client
 	if server_file.Version > (*client_files_info)[file_name].version {
 
+		fmt.Println("Server has higher version thus updating the file from server")
 		//If server file is deleted
 
 		if arraysEqual(server_file.BlockHashList, delHash) {
@@ -151,6 +152,7 @@ func handleUpdateServerCase(server_file *FileMetaData, client_files_info *map[st
 		sendFileToServer(client_file, file_name, client, int32((*client_files_info)[file_name].version))
 
 	} else if !arraysEqual((*client_files_info)[file_name].blockHashList, server_file.BlockHashList) { // Same version and hashbytes are unequal
+		fmt.Println("Same version but hashbytes are unequal on", client.BaseDir, "thus updating the file from server")
 		fetchFileFromServer(client, client_files_info, *server_file, file_name)
 	}
 	return nil
@@ -365,7 +367,7 @@ func putAllBlocksToServer(client RPCClient, blocks []Block) error {
 				fmt.Println("Put block error")
 				return err
 			}
-			//fmt.Println("Put block success on server", server_address)
+			fmt.Println("Put block success on server", server_address)
 		}
 
 	}

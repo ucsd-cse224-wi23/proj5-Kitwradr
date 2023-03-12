@@ -69,7 +69,7 @@ func (surfClient *RPCClient) HasBlocks(blockHashesIn []string, blockStoreAddr st
 
 func (surfClient *RPCClient) GetFileInfoMap(serverFileInfoMap *map[string]*FileMetaData) error {
 
-	for _, addr := range surfClient.MetaStoreAddrs {
+	for idx, addr := range surfClient.MetaStoreAddrs {
 
 		conn, err := grpc.Dial(addr, grpc.WithInsecure())
 
@@ -91,11 +91,11 @@ func (surfClient *RPCClient) GetFileInfoMap(serverFileInfoMap *map[string]*FileM
 			// if err.Error() == ERR_NOT_LEADER.Error() {
 			// 	continue
 			// }
-			//fmt.Println("Error in get file info map", err.Error())
+			fmt.Println("Error in get file info map", err.Error(), "server is", addr, idx)
 			continue
 			//return err
 		}
-
+		fmt.Println("Found leader no error : leader is", addr, idx)
 		for key, value := range (*fileInfoMap).FileInfoMap {
 			(*serverFileInfoMap)[key] = value
 			//fmt.Println("key,value", key, value)

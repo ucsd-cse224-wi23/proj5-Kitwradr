@@ -8,7 +8,6 @@ import (
 	"time"
 
 	grpc "google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -58,14 +57,11 @@ func (s *RaftSurfstore) GetFileInfoMap(ctx context.Context, empty *emptypb.Empty
 	if !s.GetIsCrashed() {
 		// If server is leader, return the file info map
 		if s.GetIsLeader() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			_, err := s.SendHeartbeat(ctx, &emptypb.Empty{})
-			if err != nil {
-				fmt.Println("Error in sending heartbeat")
-				return nil, err
+			if s.checkMajority() {
+				return s.metaStore.GetFileInfoMap(ctx, empty)
+			} else {
+				return nil, ERR_NO_MAJORITY
 			}
-			return s.metaStore.GetFileInfoMap(ctx, empty)
 		} else {
 			return nil, ERR_NOT_LEADER
 		}
@@ -79,7 +75,11 @@ func (s *RaftSurfstore) GetBlockStoreMap(ctx context.Context, hashes *BlockHashe
 	if !s.GetIsCrashed() {
 		// If server is leader, return the block store map
 		if s.GetIsLeader() {
-			return s.metaStore.GetBlockStoreMap(ctx, hashes)
+			if s.checkMajority() {
+				return s.metaStore.GetBlockStoreMap(ctx, hashes)
+			} else {
+				return nil, ERR_NO_MAJORITY
+			}
 		} else {
 			return nil, ERR_NOT_LEADER
 		}
@@ -95,13 +95,30 @@ func (s *RaftSurfstore) GetBlockStoreAddrs(ctx context.Context, empty *emptypb.E
 	if !s.GetIsCrashed() {
 		// If server is leader, return the block store addresses
 		if s.GetIsLeader() {
-			return s.metaStore.GetBlockStoreAddrs(ctx, empty)
+			if s.checkMajority() {
+				return s.metaStore.GetBlockStoreAddrs(ctx, empty)
+			} else {
+				return nil, ERR_NO_MAJORITY
+			}
 		} else {
 			return nil, ERR_NOT_LEADER
 		}
 	} else {
 		return nil, ERR_SERVER_CRASHED
 	}
+}
+
+func (s *RaftSurfstore) checkMajority() bool {
+	fmt.Println("---Checking majority---")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := s.SendHeartbeat(ctx, &emptypb.Empty{})
+	if err != nil {
+		fmt.Println("Error in sending heartbeat", err)
+		return false
+	}
+	fmt.Println("---Majority check successful---", true)
+	return true
 }
 
 // If the node is the leader, and if a majority of the nodes are working, should return the correct answer;
@@ -128,13 +145,7 @@ func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) 
 	// commit the entry once majority of followers have it in their log
 	//ommit := <-commitChan
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, err := s.SendHeartbeat(ctx, &emptypb.Empty{})
-	if err != nil {
-		fmt.Println("Error in sending heartbeat")
-		return nil, err
-	}
+	s.checkMajority()
 
 	//if commit {
 
@@ -142,7 +153,19 @@ func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) 
 	if !s.GetIsCrashed() {
 		// If server is leader, update the file
 		if s.GetIsLeader() {
-			return s.metaStore.UpdateFile(ctx, filemeta)
+			version, err := s.metaStore.UpdateFile(ctx, filemeta)
+			s.commitIndex+=1
+
+			if err != nil {
+				fmt.Println("Error in updating file")
+				return nil,err
+			} else {
+				fmt.Println("File updated successfully, new log is ", s.log)
+			}
+			//commit to followers - part 2 of two phase commit
+			fmt.Println("Committing to followers")
+			s.checkMajority()
+			return version, err
 		} else {
 			return nil, ERR_NOT_LEADER
 		}
@@ -156,42 +179,42 @@ func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) 
 
 }
 
-func (s *RaftSurfstore) sendToAllFollowersInParallel(ctx context.Context, chanIndex int) {
-	// send entry to all my followers and count the replies
+// func (s *RaftSurfstore) sendToAllFollowersInParallel(ctx context.Context, chanIndex int) {
+// 	// send entry to all my followers and count the replies
 
-	responses := make(chan bool, len(s.peers)-1)
-	// contact all the follower, send some AppendEntries call
-	for idx, addr := range s.peers {
-		if int64(idx) == s.id {
-			continue
-		}
+// 	responses := make(chan bool, len(s.peers)-1)
+// 	// contact all the follower, send some AppendEntries call
+// 	for idx, addr := range s.peers {
+// 		if int64(idx) == s.id {
+// 			continue
+// 		}
 
-		go s.sendToFollower(ctx, addr, responses)
-	}
+// 		go s.sendToFollower(ctx, addr, responses)
+// 	}
 
-	totalResponses := 1
-	totalAppends := 1
+// 	totalResponses := 1
+// 	totalAppends := 1
 
-	// wait in loop for responses
-	for {
-		result := <-responses
-		totalResponses++
-		if result {
-			totalAppends++
-		}
-		if totalResponses == len(s.peers) {
-			break
-		}
-	}
+// 	// wait in loop for responses
+// 	for {
+// 		result := <-responses
+// 		totalResponses++
+// 		if result {
+// 			totalAppends++
+// 		}
+// 		if totalResponses == len(s.peers) {
+// 			break
+// 		}
+// 	}
 
-	if totalAppends > len(s.peers)/2 {
-		// TODO put on correct channel
-		fmt.Println("Channel index", chanIndex)
-		*s.pendingCommits[chanIndex] <- true
-		// TODO update commit Index correctly
-		s.commitIndex++
-	}
-}
+// 	if totalAppends > len(s.peers)/2 {
+// 		// TODO put on correct channel
+// 		fmt.Println("Channel index", chanIndex)
+// 		*s.pendingCommits[chanIndex] <- true
+// 		// TODO update commit Index correctly
+// 		s.commitIndex++
+// 	}
+// }
 
 // 1. Reply false if term < currentTerm (§5.1)
 // 2. Reply false if log doesn’t contain an entry at prevLogIndex whose term
@@ -208,12 +231,12 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 
 		// 1. Reply false if term < currentTerm
 		if input.Term > s.term {
-
+			fmt.Println("1 Returning false in AppendEntries", input.Term, s.term)
 			// Resolving conflicting leader
 			s.isLeaderMutex.Lock()
 			defer s.isLeaderMutex.Unlock()
 			s.isLeader = false
-
+			//update the term of the follower
 			s.term = input.Term
 			appendEntryOutput.Success = false
 			return appendEntryOutput, nil
@@ -221,7 +244,9 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 
 		// 2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm
 		if input.PrevLogIndex >= 0 && input.PrevLogIndex < int64(len(s.log)) {
+
 			if s.log[input.PrevLogIndex].Term != input.PrevLogTerm {
+				fmt.Println("2 Returning false in AppendEntries", s.log[input.PrevLogIndex].Term, input.PrevLogTerm)
 				appendEntryOutput.Success = false
 				return appendEntryOutput, nil
 			}
@@ -235,11 +260,13 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 		// 4. Append any new entries not already in the log
 
 		if len(input.Entries) > 0 {
-			fmt.Println("Appending entries: ", input.Entries)
+			fmt.Println("Appending entries on server", s.id, input.Entries)
 			s.log = append(s.log, input.Entries...)
 		}
 
 		appendEntryOutput.Success = true
+		appendEntryOutput.MatchedIndex = int64(len(s.log) - 1)
+		appendEntryOutput.Term = s.term
 
 		// 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
 		if input.LeaderCommit > s.commitIndex {
@@ -249,6 +276,7 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 		// Execute the entries in the log
 		for s.lastApplied < input.LeaderCommit {
 			entry := s.log[s.lastApplied+1]
+			fmt.Println("Committing entry in follower", entry)
 			s.metaStore.UpdateFile(ctx, entry.FileMetaData)
 			s.lastApplied++
 		}
@@ -267,6 +295,7 @@ func (s *RaftSurfstore) SetLeader(ctx context.Context, _ *emptypb.Empty) (*Succe
 		s.isLeader = true
 		s.term += 1
 		s.matchIndex = make([]int64, len(s.peers))
+		initializeArray(s.matchIndex, -1)
 		s.nextIndex = make([]int64, len(s.peers))
 		initializeArray(s.nextIndex, int64(len(s.log)))
 		s.isLeaderMutex.Unlock()
@@ -292,6 +321,7 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 	} else {
 		//wg := sync.WaitGroup{}
 		if s.GetIsLeader() {
+			majority := false
 			for {
 				totalAppends := 1
 				for index, server_addr := range s.peers {
@@ -306,15 +336,15 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 						output, err := client.AppendEntries(ctx, appendEntryInput)
 
 						if err != nil {
-							fmt.Println("Error sending heartbeat to follower", err)
+							fmt.Println("Error sending heartbeat to follower", index, err)
 							continue
 						}
 
 						if output.Success {
 							totalAppends++
 							if len(s.log) > 0 {
-								s.nextIndex[index] = int64(len(s.log))
-								s.matchIndex[index] = int64(len(s.log) - 1)
+								s.nextIndex[index] = output.MatchedIndex + 1
+								s.matchIndex[index] = output.MatchedIndex
 							}
 						} else {
 							if s.nextIndex[index] >= int64(1) {
@@ -326,12 +356,15 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 				//check majority
 				if totalAppends > len(s.peers)/2 {
 					fmt.Println("Majority of followers have received heartbeat")
+					majority = true
 					break
 				}
 			}
 			// Waiting for 100ms before sending another heartbeat
-			fmt.Println("Waiting for 100ms before sending another heartbeat")
-			time.Sleep(100 * time.Millisecond)
+			if !majority {
+				fmt.Println("Waiting before sending another heartbeat")
+				time.Sleep(1 * time.Second)
+			}
 		}
 	}
 	return &Success{Flag: true}, nil
@@ -373,7 +406,7 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 // }
 
 func createAppendEntry(leaderStore *RaftSurfstore, followerIndex int) *AppendEntryInput {
-
+	//fmt.Println("----Beginning of createAppendEntry---- for follower: ", followerIndex)
 	var appendEntryInput = &AppendEntryInput{}
 
 	appendEntryInput.Term = leaderStore.term
@@ -381,47 +414,56 @@ func createAppendEntry(leaderStore *RaftSurfstore, followerIndex int) *AppendEnt
 
 	appendEntryInput.PrevLogIndex = leaderStore.matchIndex[followerIndex]
 
+	//fmt.Println("PrevLogIndex: ", appendEntryInput.PrevLogIndex, "Leader log length: ", len(leaderStore.log))
+
 	if len(leaderStore.log) > int(appendEntryInput.PrevLogIndex) {
-		appendEntryInput.PrevLogTerm = leaderStore.log[appendEntryInput.PrevLogIndex].Term
+		//fmt.Println("Leader log length: ", len(leaderStore.log))
+
+		if appendEntryInput.PrevLogIndex >= 0 {
+			appendEntryInput.PrevLogTerm = leaderStore.log[appendEntryInput.PrevLogIndex].Term
+		}
 		appendEntryInput.Entries = leaderStore.log[appendEntryInput.PrevLogIndex+1:]
+		//fmt.Println("Entries to be sent for follower : ", followerIndex, appendEntryInput.Entries)
 	}
+
+	//fmt.Println("----End of createAppendEntry----")
 
 	return appendEntryInput
 }
 
-func (s *RaftSurfstore) sendToFollower(ctx context.Context, addr string, responses chan bool) error {
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		fmt.Println("Error opening a grpc connection")
-		return err
-	}
+// func (s *RaftSurfstore) sendToFollower(ctx context.Context, addr string, responses chan bool) error {
+// 	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+// 	if err != nil {
+// 		fmt.Println("Error opening a grpc connection")
+// 		return err
+// 	}
 
-	c := NewRaftSurfstoreClient(conn)
+// 	c := NewRaftSurfstoreClient(conn)
 
-	dummyAppendEntriesInput := AppendEntryInput{
-		Term: s.term,
-		// TODO put the right values
-		PrevLogTerm:  -1,
-		PrevLogIndex: -1,
-		Entries:      s.log,
-		LeaderCommit: s.commitIndex,
-	}
+// 	dummyAppendEntriesInput := AppendEntryInput{
+// 		Term: s.term,
+// 		// TODO put the right values
+// 		PrevLogTerm:  -1,
+// 		PrevLogIndex: -1,
+// 		Entries:      s.log,
+// 		LeaderCommit: s.commitIndex,
+// 	}
 
-	result, err := c.AppendEntries(ctx, &dummyAppendEntriesInput)
-	if err != nil {
-		fmt.Println("Error sending heartbeat to server: ", addr, " ", err)
-		return err
-	}
+// 	result, err := c.AppendEntries(ctx, &dummyAppendEntriesInput)
+// 	if err != nil {
+// 		fmt.Println("Error sending heartbeat to server: ", addr, " ", err)
+// 		return err
+// 	}
 
-	// TODO check output
-	if result.Success {
-		responses <- true
-	} else {
-		responses <- false
-	}
+// 	// TODO check output
+// 	if result.Success {
+// 		responses <- true
+// 	} else {
+// 		responses <- false
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 // ========== DO NOT MODIFY BELOW THIS LINE =====================================
 
