@@ -260,8 +260,8 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 
 		if len(input.Entries) > 0 {
 			fmt.Println("Appending entries on server", s.id, input.Entries)
-			fmt.Println("Current log --->", s.log)
 			s.log = append(s.log, input.Entries...)
+			fmt.Println("Current log --->", s.log)
 		}
 
 		appendEntryOutput.Success = true
@@ -514,7 +514,10 @@ func (s *RaftSurfstore) GetInternalState(ctx context.Context, empty *emptypb.Emp
 		MetaMap:  fileInfoMap,
 	}
 	s.isLeaderMutex.RUnlock()
-
+	fmt.Println("---Internal State of server: ", s.id+1, "---")
+	fmt.Println(s.log)
+	fmt.Println(state)
+	fmt.Println("------")
 	return state, nil
 }
 
