@@ -126,10 +126,13 @@ func (s *RaftSurfstore) checkMajority() bool {
 func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) (*Version, error) {
 
 	// append entry to our log
-	s.log = append(s.log, &UpdateOperation{
+	entry := &UpdateOperation{
 		Term:         s.term,
 		FileMetaData: filemeta,
-	})
+	}
+	s.log = append(s.log, entry)
+
+	fmt.Println("Appending entry on leader", s.id, "entry", entry)
 
 	//commitChan := make(chan bool)
 	//s.pendingCommits = append(s.pendingCommits, &commitChan)
