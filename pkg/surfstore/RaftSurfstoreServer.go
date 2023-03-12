@@ -346,7 +346,7 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 								s.matchIndex[index] = output.MatchedIndex
 							}
 						} else {
-							handleFollowerUpdateToLatest(appendEntryInput, client, index)
+							s.handleFollowerUpdateToLatest(appendEntryInput, client, index)
 						}
 					}
 				}
@@ -367,7 +367,7 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 	return &Success{Flag: true}, nil
 }
 
-func handleFollowerUpdateToLatest(appendEntryInput *AppendEntryInput, client RaftSurfstoreClient, followerIndex int) {
+func (s *RaftSurfstore) handleFollowerUpdateToLatest(appendEntryInput *AppendEntryInput, client RaftSurfstoreClient, followerIndex int) {
 	for {
 		fmt.Println("Updating follower", followerIndex, " to latest log")
 		output, err := client.AppendEntries(context.Background(), appendEntryInput)
@@ -376,6 +376,10 @@ func handleFollowerUpdateToLatest(appendEntryInput *AppendEntryInput, client Raf
 			break
 		}
 		if output.Success {
+			if len(s.log) > 0 {
+				s.nextIndex[followerIndex] = output.MatchedIndex + 1
+				s.matchIndex[followerIndex] = output.MatchedIndex
+			}
 			break
 		} else {
 			if appendEntryInput.PrevLogIndex >= int64(1) {
