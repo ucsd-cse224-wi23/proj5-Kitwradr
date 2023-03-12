@@ -154,14 +154,13 @@ func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) 
 		// If server is leader, update the file
 		if s.GetIsLeader() {
 			version, err := s.metaStore.UpdateFile(ctx, filemeta)
-			s.commitIndex += 1
-
 			if err != nil {
 				fmt.Println("Error in updating file")
 				return nil, err
 			} else {
 				fmt.Println("File updated successfully, new log is ", s.log)
 			}
+			s.commitIndex += 1
 			//commit to followers - part 2 of two phase commit
 			fmt.Println("Committing to followers")
 			s.checkMajority()
@@ -347,9 +346,7 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 								s.matchIndex[index] = output.MatchedIndex
 							}
 						} else {
-							if s.nextIndex[index] >= int64(1) {
-								s.nextIndex[index]--
-							}
+							handleFollowerUpdateToLatest(appendEntryInput, client, index)
 						}
 					}
 				}
@@ -368,6 +365,24 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 		}
 	}
 	return &Success{Flag: true}, nil
+}
+
+func handleFollowerUpdateToLatest(appendEntryInput *AppendEntryInput, client RaftSurfstoreClient, followerIndex int) {
+	for {
+		fmt.Println("Updating follower", followerIndex, " to latest log")
+		output, err := client.AppendEntries(context.Background(), appendEntryInput)
+		if err != nil {
+			fmt.Println("Error sending heartbeat to follower : maybe it is crashed", err)
+			break
+		}
+		if output.Success {
+			break
+		} else {
+			if appendEntryInput.PrevLogIndex >= int64(1) {
+				appendEntryInput.PrevLogIndex--
+			}
+		}
+	}
 }
 
 // func sendHeartbeatInParallel(s *RaftSurfstore) {
