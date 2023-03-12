@@ -280,7 +280,7 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 		// Execute the entries in the log
 		for s.lastApplied < input.LeaderCommit {
 			entry := s.log[s.lastApplied+1]
-			fmt.Println("Committing entry in follower", s.id, entry)
+			fmt.Println("Committing entry in follower", s.id+1, entry)
 			s.metaStore.UpdateFile(ctx, entry.FileMetaData)
 			s.lastApplied++
 		}
