@@ -154,11 +154,11 @@ func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) 
 		// If server is leader, update the file
 		if s.GetIsLeader() {
 			version, err := s.metaStore.UpdateFile(ctx, filemeta)
-			s.commitIndex+=1
+			s.commitIndex += 1
 
 			if err != nil {
 				fmt.Println("Error in updating file")
-				return nil,err
+				return nil, err
 			} else {
 				fmt.Println("File updated successfully, new log is ", s.log)
 			}
@@ -276,7 +276,7 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 		// Execute the entries in the log
 		for s.lastApplied < input.LeaderCommit {
 			entry := s.log[s.lastApplied+1]
-			fmt.Println("Committing entry in follower", entry)
+			fmt.Println("Committing entry in follower", s.id, entry)
 			s.metaStore.UpdateFile(ctx, entry.FileMetaData)
 			s.lastApplied++
 		}
@@ -480,7 +480,7 @@ func (s *RaftSurfstore) Restore(ctx context.Context, _ *emptypb.Empty) (*Success
 	s.isCrashedMutex.Lock()
 	s.isCrashed = false
 	s.isCrashedMutex.Unlock()
-
+	fmt.Println("Restore from server: ", s.id)
 	return &Success{Flag: true}, nil
 }
 
