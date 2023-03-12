@@ -263,7 +263,7 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 		// 4. Append any new entries not already in the log
 
 		if len(input.Entries) > 0 {
-			fmt.Println("Appending entries on server", s.id, input.Entries)
+			fmt.Println("Appending entries on server", s.id+1, input.Entries)
 			s.log = append(s.log, input.Entries...)
 			fmt.Println("Current log --->", s.log)
 		}
@@ -303,7 +303,7 @@ func (s *RaftSurfstore) SetLeader(ctx context.Context, _ *emptypb.Empty) (*Succe
 		s.nextIndex = make([]int64, len(s.peers))
 		initializeArray(s.nextIndex, int64(len(s.log)))
 		s.isLeaderMutex.Unlock()
-		fmt.Println("Leader set successfully", s.id)
+		fmt.Println("Leader set successfully", s.id+1)
 	} else {
 		return &Success{Flag: false}, ERR_SERVER_CRASHED
 	}
@@ -319,7 +319,7 @@ func initializeArray(array []int64, value int64) {
 // Sends a round of AppendEntries to all other nodes. The leader will attempt to replicate logs to all other nodes when this is called.
 // It can be called even when there are no entries to replicate. If a node is not in the leader state it should do nothing.
 func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*Success, error) {
-	fmt.Println("SendHeartbeat from server: ", s.id)
+	fmt.Println("SendHeartbeat from server: ", s.id+1)
 	if s.GetIsCrashed() {
 		return &Success{Flag: false}, ERR_SERVER_CRASHED
 	} else {
@@ -340,7 +340,7 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 						output, err := client.AppendEntries(ctx, appendEntryInput)
 
 						if err != nil {
-							fmt.Println("Error sending heartbeat to follower", index, err)
+							fmt.Println("Error sending heartbeat to follower", index+1, err)
 							continue
 						}
 
@@ -374,7 +374,7 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 
 func (s *RaftSurfstore) handleFollowerUpdateToLatest(appendEntryInput *AppendEntryInput, client RaftSurfstoreClient, followerIndex int) {
 	for {
-		fmt.Println("Updating follower", followerIndex, " to latest log")
+		fmt.Println("Updating follower", followerIndex+1, " to latest log")
 		output, err := client.AppendEntries(context.Background(), appendEntryInput)
 		if err != nil {
 			fmt.Println("Error sending heartbeat to follower : maybe it is crashed", err)
