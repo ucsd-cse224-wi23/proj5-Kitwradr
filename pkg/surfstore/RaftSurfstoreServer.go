@@ -332,6 +332,7 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 				}
 				totalAppends := 1
 				for index, server_addr := range s.peers {
+					fmt.Println("Sending heartbeat to follower", index+1, "from leader", s.id+1, "state of leader", s.GetIsCrashed())
 					if int64(index) != s.id {
 						//wg.Add(1)
 						appendEntryInput := createAppendEntry(s, index)
