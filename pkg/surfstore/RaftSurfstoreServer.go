@@ -133,6 +133,7 @@ func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) 
 	s.log = append(s.log, entry)
 
 	fmt.Println("Appending entry on leader", s.id, "entry", entry)
+	fmt.Println("Current log on leader", s.id, "log", s.log)
 
 	//commitChan := make(chan bool)
 	//s.pendingCommits = append(s.pendingCommits, &commitChan)
