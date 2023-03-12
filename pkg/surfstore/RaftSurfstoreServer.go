@@ -327,20 +327,24 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 		if s.GetIsLeader() {
 			majority := false
 			for {
-				if s.GetIsCrashed() {
+				if s.GetIsCrashed() || !s.GetIsLeader() {
 					break
 				}
 				totalAppends := 1
 				for index, server_addr := range s.peers {
-					fmt.Println("Sending heartbeat to follower", index+1, "from leader", s.id+1, "state of leader", s.GetIsCrashed())
+
 					if int64(index) != s.id {
 						//wg.Add(1)
+						fmt.Println("Sending heartbeat to follower", index+1, "from leader", s.id+1, "state of leader", s.GetIsCrashed())
 						appendEntryInput := createAppendEntry(s, index)
 						//go s.sendToFollower(server_addr, appendEntryInput)
 
 						conn, _ := grpc.Dial(server_addr, grpc.WithInsecure())
 						client := NewRaftSurfstoreClient(conn)
 
+						if s.GetIsCrashed() || !s.GetIsLeader() {
+							break
+						}
 						output, err := client.AppendEntries(ctx, appendEntryInput)
 
 						if err != nil {
@@ -378,6 +382,9 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 
 func (s *RaftSurfstore) handleFollowerUpdateToLatest(appendEntryInput *AppendEntryInput, client RaftSurfstoreClient, followerIndex int) {
 	for {
+		if s.GetIsCrashed() || !s.GetIsLeader() {
+			break
+		}
 		fmt.Println("Updating follower", followerIndex+1, " to latest log")
 		output, err := client.AppendEntries(context.Background(), appendEntryInput)
 		if err != nil {
@@ -397,41 +404,6 @@ func (s *RaftSurfstore) handleFollowerUpdateToLatest(appendEntryInput *AppendEnt
 		}
 	}
 }
-
-// func sendHeartbeatInParallel(s *RaftSurfstore) {
-// 	// send entry to all my followers and count the replies
-
-// 	responses := make(chan bool, len(s.peers)-1)
-
-// 	for index, server := range s.peers {
-// 		if server != s.peers[s.id] {
-// 			appendEntryInput := createAppendEntry(s, index)
-// 			go s.sendToFollower(server, responses, appendEntryInput)
-// 		}
-// 	}
-
-// 	totalResponses := 1
-// 	totalAppends := 1
-
-// 	// wait in loop for responses
-// 	for {
-// 		result := <-responses
-// 		totalResponses++
-// 		if result {
-// 			totalAppends++
-// 		}
-// 		if totalResponses == len(s.peers) {
-// 			break
-// 		}
-// 	}
-
-// 	if totalAppends > len(s.peers)/2 {
-// 		// TODO put on correct channel
-// 		*s.pendingCommits[0] <- true
-// 		// TODO update commit Index correctly
-// 		s.commitIndex = 0
-// 	}
-// }
 
 func createAppendEntry(leaderStore *RaftSurfstore, followerIndex int) *AppendEntryInput {
 	//fmt.Println("----Beginning of createAppendEntry---- for follower: ", followerIndex)
