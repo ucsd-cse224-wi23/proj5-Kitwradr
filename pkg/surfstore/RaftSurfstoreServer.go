@@ -132,8 +132,8 @@ func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) 
 	}
 	s.log = append(s.log, entry)
 
-	fmt.Println("Appending entry on leader", s.id, "entry", entry)
-	fmt.Println("Current log on leader", s.id, "log", s.log)
+	fmt.Println("Appending entry on leader", s.id+1, "entry", entry)
+	fmt.Println("Current log on leader", s.id+1, "log", s.log)
 
 	//commitChan := make(chan bool)
 	//s.pendingCommits = append(s.pendingCommits, &commitChan)
@@ -327,6 +327,9 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 		if s.GetIsLeader() {
 			majority := false
 			for {
+				if s.GetIsCrashed() {
+					break
+				}
 				totalAppends := 1
 				for index, server_addr := range s.peers {
 					if int64(index) != s.id {
