@@ -87,18 +87,12 @@ func (surfClient *RPCClient) GetFileInfoMap(serverFileInfoMap *map[string]*FileM
 		fileInfoMap, err := c.GetFileInfoMap(ctx, &emptypb.Empty{})
 
 		if err != nil {
-			//fmt.Println("Condition", err.Error(), ERR_NOT_LEADER.Error(), err.Error() == ERR_NOT_LEADER.Error())
-			// if err.Error() == ERR_NOT_LEADER.Error() {
-			// 	continue
-			// }
 			fmt.Println("Error in get file info map", err.Error(), "server is", addr, idx)
 			continue
-			//return err
 		}
 		fmt.Println("Found leader no error : leader is", addr, idx)
 		for key, value := range (*fileInfoMap).FileInfoMap {
 			(*serverFileInfoMap)[key] = value
-			//fmt.Println("key,value", key, value)
 		}
 		return nil
 	}
@@ -122,11 +116,7 @@ func (surfClient *RPCClient) UpdateFile(fileMetaData *FileMetaData, latestVersio
 		defer cancel()
 		b, err := c.UpdateFile(ctx, fileMetaData)
 		if err != nil {
-			//if err == ERR_NOT_LEADER {
 			continue
-			//}
-			//conn.Close()
-			//return err
 		}
 		*latestVersion = b.Version
 		return nil
@@ -153,10 +143,7 @@ func (surfClient *RPCClient) GetBlockStoreAddrs(blockStoreAddr *[]string) error 
 		defer cancel()
 		addr, err := c.GetBlockStoreAddrs(ctx, &emptypb.Empty{})
 		if err != nil {
-			//if err == ERR_NOT_LEADER {
 			continue
-			//}
-			//return err
 		}
 		*blockStoreAddr = addr.BlockStoreAddrs
 		return nil
@@ -180,11 +167,7 @@ func (surfClient *RPCClient) GetBlockStoreMap(blockHashesIn []string, blockStore
 		defer cancel()
 		block_store_map, err := c.GetBlockStoreMap(ctx, &BlockHashes{Hashes: blockHashesIn})
 		if err != nil {
-			//if err == ERR_NOT_LEADER {
 			continue
-			//}
-			//conn.Close()
-			//return err
 		}
 
 		if *blockStoreMap == nil {

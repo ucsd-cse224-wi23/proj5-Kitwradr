@@ -314,11 +314,12 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 					majority = true
 					break
 				}
-			}
-			// Waiting for 100ms before sending another heartbeat
-			if !majority {
-				fmt.Println("Waiting before sending another heartbeat")
-				time.Sleep(1 * time.Second)
+
+				// Waiting before sending another heartbeat
+				if !majority {
+					fmt.Println("Waiting before sending another heartbeat")
+					time.Sleep(50 * time.Millisecond)
+				}
 			}
 		}
 	}
